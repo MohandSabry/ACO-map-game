@@ -11,8 +11,6 @@ from tsp_instance import generate_cities, get_city_labels
 from utils import (
     build_distance_matrix,
     compute_route_length,
-    parse_route_input,
-    validate_route,
 )
 
 
@@ -24,7 +22,8 @@ def init_session_state() -> None:
         "cities": None,
         "city_labels": None,
         "distance_matrix": None,
-        "user_route": None,
+        # user_route = order of clicked cities (can be partial)
+        "user_route": [],
         "user_distance": None,
         "aco_best_route": None,
         "aco_best_distance": None,
@@ -45,7 +44,7 @@ def regenerate_cities(num_cities: int, seed: int) -> None:
     st.session_state.cities = cities
     st.session_state.city_labels = labels
     st.session_state.distance_matrix = dist_matrix
-    st.session_state.user_route = None
+    st.session_state.user_route = []
     st.session_state.user_distance = None
     st.session_state.aco_best_route = None
     st.session_state.aco_best_distance = None
@@ -213,28 +212,25 @@ def animate_route(
     route_loop = closed_loop(route)
     num_segments = len(route_loop) - 1
 
-    # This placeholder will be updated every frame
     placeholder = st.empty()
 
     for k in range(1, num_segments + 1):
-        # k = how many segments we show in this frame
-
         fig, ax = plt.subplots()
 
-        # Draw cities
+        # Plot cities and labels
         x = cities[:, 0]
         y = cities[:, 1]
         ax.scatter(x, y, zorder=4)
         for i, label in enumerate(labels):
             ax.text(x[i] + 0.01, y[i] + 0.01, label, fontsize=9, zorder=5)
 
-        # Draw only the first k segments of the route
+        # Draw only the first k segments
         draw_route_with_arrows(
             ax,
             cities,
             route,
             color=color,
-            max_segments=k,  # <- key: show partial route
+            max_segments=k,
             arrow_every=1,
         )
 
@@ -243,12 +239,10 @@ def animate_route(
         ax.set_title(title)
         fig.tight_layout()
 
-        # Update the same placeholder with the new frame
         placeholder.pyplot(fig, clear_figure=True)
         plt.close(fig)
-
-        # Small pause so you can see the animation
         time.sleep(delay)
+
 
 def plot_aco_progress(best_history: List[float]) -> plt.Figure:
     """Plot the improvement of the best tour length over iterations."""
@@ -275,22 +269,50 @@ Then we run the **Ant Colony Optimization (ACO)** algorithm on the same map and 
 - Your route vs. the algorithm’s best route.
 - How the best route improves over iterations.
 
-### How to play
+### How to play (click version)
 
 1. Look at the map of cities (labeled A, B, C, ...).
-2. In the text box, type the order in which you want to visit them, e.g.:
-   - `A-B-C-D-E-F-G-H`
-3. Click **Submit My Route** to see:
-   - Your route drawn on the map, with arrowheads showing direction.
-   - Your total route length.
+2. Click the **city buttons** (A, B, C, ...) in the order you want to visit them.
+   - A line with arrows will be drawn following your clicks.
+3. After you clicked **all cities once**, your route is complete:
+   - The app will compute your total route length.
 4. Choose ACO parameters in the sidebar (or use defaults).
 5. Click **Run Ant Colony** to see:
    - The best route the ants found.
-   - A chart of the best distance over iterations.
-   - A percentage comparison between your route and ACO’s best.
+   - A chart of best distance over iterations.
 6. Use the **animation buttons** to watch routes being drawn step-by-step.
         """
     )
+
+
+def handle_city_click(city_idx: int) -> None:
+    """
+    Update the user's route when a city button is clicked.
+
+    - Adds the city to the route if not already visited.
+    - When all cities have been chosen, computes route length.
+    """
+    labels = st.session_state.city_labels
+    num_cities = len(labels)
+
+    # start from existing route or empty
+    route: List[int] = list(st.session_state.user_route or [])
+
+    # ignore if already chosen
+    if city_idx in route:
+        return
+
+    route.append(city_idx)
+    st.session_state.user_route = route
+    st.session_state.user_distance = None  # reset until route complete
+
+    # When all cities chosen once, compute distance
+    if len(route) == num_cities:
+        dist = compute_route_length(route, st.session_state.distance_matrix)
+        st.session_state.user_distance = dist
+        st.success(
+            f"Route complete! Length (including return to start): **{dist:.3f}**"
+        )
 
 
 def main() -> None:
@@ -338,6 +360,7 @@ def main() -> None:
 
     col_left, col_right = st.columns([1.2, 1.0])
 
+    # LEFT: Map
     with col_left:
         st.subheader("City Map & Routes")
         fig_map = plot_routes(
@@ -348,51 +371,60 @@ def main() -> None:
         )
         st.pyplot(fig_map)
 
+    # RIGHT: Click interface for route
     with col_right:
-        st.subheader("Your Route")
+        st.subheader("Build your route by clicking cities")
 
         st.markdown(
-            f"Cities available (in order): **{', '.join(labels)}**\n\n"
-            "Enter a route that uses **each city exactly once**.\n\n"
-            "Example: `A-B-C-D-E-F-G-H`"
+            "Click each city **once** in the order you want to visit them.\n\n"
+            "When you have clicked all cities, the route will be closed into a circle automatically."
         )
 
-        route_input = st.text_input(
-            "Type your route here:",
-            value="-".join(labels),
-            key="route_input",
-        )
+        # Buttons for each city, arranged in columns
+        num_buttons_cols = min(5, len(labels))
+        cols = st.columns(num_buttons_cols)
 
-        submit_route = st.button("Submit My Route")
+        for idx, label in enumerate(labels):
+            col = cols[idx % num_buttons_cols]
+            with col:
+                # disable button if city already chosen
+                disabled = idx in (st.session_state.user_route or [])
+                if st.button(
+                    label,
+                    key=f"city_btn_{idx}",
+                    disabled=disabled,
+                ):
+                    handle_city_click(idx)
 
-        if submit_route:
-            parsed_route = parse_route_input(route_input, labels)
-            if parsed_route is None:
-                st.error(
-                    "Could not understand your route. "
-                    "Please use letters separated by '-' or ',' (e.g., A-B-C-D)."
-                )
-            else:
-                valid, msg = validate_route(parsed_route, len(labels))
-                if not valid:
-                    st.error(msg)
-                else:
-                    st.session_state.user_route = parsed_route
-                    user_dist = compute_route_length(parsed_route, dist_matrix)
-                    st.session_state.user_distance = user_dist
-                    st.success(f"Your route length (including return to start): **{user_dist:.3f}**")
+        # Reset button
+        if st.button("Reset my route"):
+            st.session_state.user_route = []
+            st.session_state.user_distance = None
 
-        if st.session_state.user_route is not None and st.session_state.user_distance is not None:
-            st.info(
-                f"Current stored route: "
-                f"{' - '.join(labels[i] for i in st.session_state.user_route)}\n\n"
-                f"Length: **{st.session_state.user_distance:.3f}**"
+        # Show current order
+        if st.session_state.user_route:
+            route_labels = [labels[i] for i in st.session_state.user_route]
+            st.write("Current order:", " → ".join(route_labels))
+            remaining = len(labels) - len(st.session_state.user_route)
+            if remaining > 0:
+                st.info(f"Choose **{remaining}** more city/cities to complete the route.")
+        else:
+            st.info("Start by clicking a city button above.")
+
+        # Show final distance if complete
+        if st.session_state.user_distance is not None:
+            st.success(
+                f"Your route length (including return to start): "
+                f"**{st.session_state.user_distance:.3f}**"
             )
 
         st.markdown("---")
         run_aco_clicked = st.button("Run Ant Colony")
 
         if run_aco_clicked:
+            if not st.session_state.user_route or len(st.session_state.user_route) != len(labels):
+                st.warning("Tip: you can still run ACO even if your route isn't complete, "
+                           "but your comparison will only make sense once you've chosen all cities.")
             with st.spinner("Ants are exploring routes..."):
                 aco = AntColony(
                     distance_matrix=dist_matrix,
@@ -402,123 +434,4 @@ def main() -> None:
                     beta=beta,
                     evaporation_rate=evaporation_rate,
                     q=q,
-                    start_city=0,
-                )
-                best_route, best_distance, best_history = aco.run()
-
-            st.session_state.aco_best_route = best_route
-            st.session_state.aco_best_distance = best_distance
-            st.session_state.aco_best_history = best_history
-
-            st.success("Ant Colony run completed!")
-
-    # Results section
-    st.markdown("---")
-    st.header("Results & Comparison")
-
-    c1, c2 = st.columns(2)
-
-    with c1:
-        if st.session_state.aco_best_distance is not None:
-            st.subheader("Best Route Found by ACO")
-            best_route_labels = [labels[i] for i in st.session_state.aco_best_route]
-            st.write("Route (start city repeats at the end):")
-            st.write(" → ".join(best_route_labels + [best_route_labels[0]]))
-            st.write(f"Best route length: **{st.session_state.aco_best_distance:.3f}**")
-
-            if st.button("Animate ACO best route"):
-                animate_route(
-                    cities,
-                    labels,
-                    st.session_state.aco_best_route,
-                    color="tab:orange",
-                    title="ACO Best Route (animated)",
-                )
-
-        if st.session_state.aco_best_history is not None:
-            fig_progress = plot_aco_progress(st.session_state.aco_best_history)
-            st.pyplot(fig_progress)
-
-    with c2:
-        st.subheader("Your Route vs. ACO")
-
-        if (
-            st.session_state.user_distance is not None
-            and st.session_state.aco_best_distance is not None
-        ):
-            user = st.session_state.user_distance
-            best = st.session_state.aco_best_distance
-            diff = user - best
-            percent_diff = (diff / best) * 100
-
-            if diff > 0:
-                st.warning(
-                    f"Your route is **{percent_diff:.1f}% longer** than the ACO best route.\n\n"
-                    f"Try to rearrange the cities and get closer!"
-                )
-            elif diff < 0:
-                st.success(
-                    f"Impressive! Your route is **{-percent_diff:.1f}% shorter** "
-                    f"than the best route the ants found with the current settings."
-                )
-            else:
-                st.success("Perfect! Your route has exactly the same length as ACO's best route.")
-
-        elif st.session_state.user_distance is None:
-            st.info("Submit a route first to compare with the algorithm.")
-        elif st.session_state.aco_best_distance is None:
-            st.info("Run the Ant Colony algorithm to get a comparison.")
-
-        # Animation button for user's route
-        if st.session_state.user_route is not None:
-            if st.button("Animate your route"):
-                animate_route(
-                    cities,
-                    labels,
-                    st.session_state.user_route,
-                    color="tab:blue",
-                    title="Your Route (animated)",
-                )
-
-    # Educational explanation at the bottom
-    st.markdown(
-        """
----
-### What the Ant Colony Algorithm is doing (in simple terms)
-
-1. **Many ants, many routes**  
-   In each iteration, several ants build complete routes through all cities.
-   They tend to prefer:
-   - edges with **more pheromone** (good experiences from previous ants)
-   - and **shorter distances** (using the distance as a heuristic).
-
-2. **Probability rule**  
-   When an ant chooses the next city, the attractiveness of a move is roughly:
-   \n\n
-   `pheromone^alpha × (1/distance)^beta`
-   \n\n
-   Then these values are turned into probabilities.
-
-3. **Evaporation**  
-   After all ants finish their tours in an iteration, existing pheromone **evaporates**.
-   This prevents the algorithm from getting stuck forever in old decisions.
-
-4. **Deposit**  
-   Ants then **deposit pheromone** on the edges of their routes.
-   Shorter routes add **more** pheromone, so future ants are more likely to follow them.
-
-5. **Over iterations**  
-   Good edges reinforce each other, bad edges fade away.
-   The best tour length usually **decreases over iterations**, which you can see in the progress chart.
-
-Try changing:
-- **Alpha**: bigger → pheromone matters more.
-- **Beta**: bigger → distance (short routes) matters more.
-- **Evaporation**: bigger → pheromone fades faster (more exploration).
-- **Number of ants / iterations**: more → more searching, but slower.
-        """
-    )
-
-
-if __name__ == "__main__":
-    main()
+                    start_city=
