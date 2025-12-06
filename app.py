@@ -213,25 +213,28 @@ def animate_route(
     route_loop = closed_loop(route)
     num_segments = len(route_loop) - 1
 
+    # This placeholder will be updated every frame
     placeholder = st.empty()
 
     for k in range(1, num_segments + 1):
+        # k = how many segments we show in this frame
+
         fig, ax = plt.subplots()
 
-        # Plot cities and labels
+        # Draw cities
         x = cities[:, 0]
         y = cities[:, 1]
         ax.scatter(x, y, zorder=4)
         for i, label in enumerate(labels):
             ax.text(x[i] + 0.01, y[i] + 0.01, label, fontsize=9, zorder=5)
 
-        # Draw only first k segments
+        # Draw only the first k segments of the route
         draw_route_with_arrows(
             ax,
             cities,
             route,
             color=color,
-            max_segments=k,
+            max_segments=k,  # <- key: show partial route
             arrow_every=1,
         )
 
@@ -240,9 +243,12 @@ def animate_route(
         ax.set_title(title)
         fig.tight_layout()
 
-        placeholder.pyplot(fig)
-        time.sleep(delay)
+        # Update the same placeholder with the new frame
+        placeholder.pyplot(fig, clear_figure=True)
+        plt.close(fig)
 
+        # Small pause so you can see the animation
+        time.sleep(delay)
 
 def plot_aco_progress(best_history: List[float]) -> plt.Figure:
     """Plot the improvement of the best tour length over iterations."""
