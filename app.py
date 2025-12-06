@@ -2,6 +2,7 @@ import string
 from typing import List, Optional, Tuple
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D  # NEW: for custom legend entries
 import numpy as np
 import streamlit as st
 
@@ -61,18 +62,18 @@ def plot_routes(
     Plot the cities and (optionally) the user and ACO routes.
 
     - Cities are shown as points with labels (A, B, C, ...).
-    - User route is drawn as one polyline.
-    - ACO best route is drawn as another polyline.
+    - Routes are drawn as **arrows** to show direction of travel.
     """
+
     fig, ax = plt.subplots()
 
     x = cities[:, 0]
     y = cities[:, 1]
-    ax.scatter(x, y)
+    ax.scatter(x, y, zorder=3)
 
     # Label each city
     for i, label in enumerate(labels):
-        ax.text(x[i] + 0.01, y[i] + 0.01, label, fontsize=9)
+        ax.text(x[i] + 0.01, y[i] + 0.01, label, fontsize=9, zorder=4)
 
     # Helper to close the loop (return to start)
     def closed_loop(route: List[int]) -> List[int]:
@@ -82,31 +83,80 @@ def plot_routes(
             return route + [route[0]]
         return route
 
-    # Plot user route
-    if user_route:
-        user_loop = closed_loop(user_route)
-        ux = cities[user_loop, 0]
-        uy = cities[user_loop, 1]
-        ax.plot(ux, uy, linestyle="-", marker="o", label="Your route", alpha=0.7)
+    def draw_route_arrows(route: List[int], color: str, zorder: int = 2) -> None:
+        """Draw arrow segments for each leg of the route."""
+        route_loop = closed_loop(route)
+        for i in range(len(route_loop) - 1):
+            start_idx = route_loop[i]
+            end_idx = route_loop[i + 1]
+            x_start, y_start = cities[start_idx]
+            x_end, y_end = cities[end_idx]
 
-    # Plot ACO route
+            # Slightly shorten arrows so arrowheads don't overlap city markers
+            dx = x_end - x_start
+            dy = y_end - y_start
+            shrink = 0.03  # how much to shrink at each end (in data units)
+            length = (dx**2 + dy**2) ** 0.5
+            if length > 0:
+                factor = (length - 2 * shrink) / length
+                x_end_adj = x_start + dx * factor
+                y_end_adj = y_start + dy * factor
+            else:
+                x_end_adj, y_end_adj = x_end, y_end
+
+            ax.annotate(
+                "",
+                xy=(x_end_adj, y_end_adj),
+                xytext=(x_start, y_start),
+                arrowprops=dict(
+                    arrowstyle="->",
+                    linewidth=2,
+                    color=color,
+                    alpha=0.9,
+                ),
+                zorder=zorder,
+            )
+
+    # Draw user route (blue arrows)
+    if user_route:
+        draw_route_arrows(user_route, color="tab:blue", zorder=2)
+
+    # Draw ACO best route (orange arrows)
     if aco_route:
-        aco_loop = closed_loop(aco_route)
-        axx = cities[aco_loop, 0]
-        ayy = cities[aco_loop, 1]
-        ax.plot(
-            axx,
-            ayy,
-            linestyle="-",
-            marker="o",
-            label="ACO best route",
-            alpha=0.9,
-        )
+        draw_route_arrows(aco_route, color="tab:orange", zorder=1)
 
     ax.set_title("TSP Cities and Routes")
     ax.set_xlabel("X coordinate")
     ax.set_ylabel("Y coordinate")
-    ax.legend(loc="best")
+
+    # Custom legend that matches arrow colors
+    legend_handles = []
+    if user_route:
+        legend_handles.append(
+            Line2D(
+                [0],
+                [0],
+                color="tab:blue",
+                linewidth=2,
+                marker=">",
+                markersize=6,
+                label="Your route",
+            )
+        )
+    if aco_route:
+        legend_handles.append(
+            Line2D(
+                [0],
+                [0],
+                color="tab:orange",
+                linewidth=2,
+                marker=">",
+                markersize=6,
+                label="ACO best route",
+            )
+        )
+    if legend_handles:
+        ax.legend(handles=legend_handles, loc="best")
 
     fig.tight_layout()
     return fig
@@ -143,7 +193,7 @@ Then we run the **Ant Colony Optimization (ACO)** algorithm on the same map and 
 2. In the text box, type the order in which you want to visit them, e.g.:
    - `A-B-C-D-E-F-G-H`
 3. Click **Submit My Route** to see:
-   - Your route drawn on the map.
+   - Your route drawn on the map (now with arrows showing direction).
    - Your total route length.
 4. Choose ACO parameters in the sidebar (or use defaults).
 5. Click **Run Ant Colony** to see:
@@ -220,7 +270,7 @@ def main() -> None:
 
         route_input = st.text_input(
             "Type your route here:",
-            value="-" .join(labels),
+            value="-".join(labels),
             key="route_input",
         )
 
