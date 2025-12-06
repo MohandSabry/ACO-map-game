@@ -434,4 +434,122 @@ def main() -> None:
                     beta=beta,
                     evaporation_rate=evaporation_rate,
                     q=q,
-                    start_city=
+                    start_city=0,
+                )
+                best_route, best_distance, best_history = aco.run()
+
+            st.session_state.aco_best_route = best_route
+            st.session_state.aco_best_distance = best_distance
+            st.session_state.aco_best_history = best_history
+
+            st.success("Ant Colony run completed!")
+
+    # Results section
+    st.markdown("---")
+    st.header("Results & Comparison")
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        if st.session_state.aco_best_distance is not None:
+            st.subheader("Best Route Found by ACO")
+            best_route_labels = [labels[i] for i in st.session_state.aco_best_route]
+            st.write("Route (start city repeats at the end):")
+            st.write(" → ".join(best_route_labels + [best_route_labels[0]]))
+            st.write(f"Best route length: **{st.session_state.aco_best_distance:.3f}**")
+
+            if st.button("Animate ACO best route"):
+                animate_route(
+                    cities,
+                    labels,
+                    st.session_state.aco_best_route,
+                    color="tab:orange",
+                    title="ACO Best Route (animated)",
+                )
+
+        if st.session_state.aco_best_history is not None:
+            fig_progress = plot_aco_progress(st.session_state.aco_best_history)
+            st.pyplot(fig_progress)
+
+    with c2:
+        st.subheader("Your Route vs. ACO")
+
+        if (
+            st.session_state.user_distance is not None
+            and st.session_state.aco_best_distance is not None
+        ):
+            user = st.session_state.user_distance
+            best = st.session_state.aco_best_distance
+            diff = user - best
+            percent_diff = (diff / best) * 100
+
+            if diff > 0:
+                st.warning(
+                    f"Your route is **{percent_diff:.1f}% longer** than the ACO best route.\n\n"
+                    f"Try clicking cities in a different order and get closer!"
+                )
+            elif diff < 0:
+                st.success(
+                    f"Impressive! Your route is **{-percent_diff:.1f}% shorter** "
+                    f"than the best route the ants found with the current settings."
+                )
+            else:
+                st.success("Perfect! Your route has exactly the same length as ACO's best route.")
+
+        elif st.session_state.user_distance is None:
+            st.info("Click cities to build a full route before comparing distances.")
+        elif st.session_state.aco_best_distance is None:
+            st.info("Run the Ant Colony algorithm to get a comparison.")
+
+        if st.session_state.user_route:
+            if st.button("Animate your route"):
+                animate_route(
+                    cities,
+                    labels,
+                    st.session_state.user_route,
+                    color="tab:blue",
+                    title="Your Route (animated)",
+                )
+
+    # Educational explanation at the bottom
+    st.markdown(
+        """
+---
+### What the Ant Colony Algorithm is doing (in simple terms)
+
+1. **Many ants, many routes**  
+   In each iteration, several ants build complete routes through all cities.
+   They tend to prefer:
+   - edges with **more pheromone** (good experiences from previous ants)
+   - and **shorter distances** (using the distance as a heuristic).
+
+2. **Probability rule**  
+   When an ant chooses the next city, the attractiveness of a move is roughly:
+   \n\n
+   `pheromone^alpha × (1/distance)^beta`
+   \n\n
+   Then these values are turned into probabilities.
+
+3. **Evaporation**  
+   After all ants finish their tours in an iteration, existing pheromone **evaporates**.
+   This prevents the algorithm from getting stuck forever in old decisions.
+
+4. **Deposit**  
+   Ants then **deposit pheromone** on the edges of their routes.
+   Shorter routes add **more** pheromone, so future ants are more likely to follow them.
+
+5. **Over iterations**  
+   Good edges reinforce each other, bad edges fade away.
+   The best tour length usually **decreases over iterations**, which you can see in the progress chart.
+
+Try changing:
+- **Alpha**: bigger → pheromone matters more.
+- **Beta**: bigger → distance (short routes) matters more.
+- **Evaporation**: bigger → pheromone fades faster (more exploration).
+- **Number of ants / iterations**: more → more searching, but slower.
+        """
+    )
+
+
+if __name__ == "__main__":
+    main()
