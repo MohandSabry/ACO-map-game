@@ -82,41 +82,46 @@ def plot_routes(
         if route[0] != route[-1]:
             return route + [route[0]]
         return route
+        
+def draw_route_arrows(route: List[int], color: str, zorder: int = 2) -> None:
+    """Draw a connected polyline with arrowheads showing direction."""
 
-    def draw_route_arrows(route: List[int], color: str, zorder: int = 2) -> None:
-        """Draw arrow segments for each leg of the route."""
-        route_loop = closed_loop(route)
-        for i in range(len(route_loop) - 1):
-            start_idx = route_loop[i]
-            end_idx = route_loop[i + 1]
-            x_start, y_start = cities[start_idx]
-            x_end, y_end = cities[end_idx]
+    route_loop = closed_loop(route)
 
-            # Slightly shorten arrows so arrowheads don't overlap city markers
-            dx = x_end - x_start
-            dy = y_end - y_start
-            shrink = 0.03  # how much to shrink at each end (in data units)
-            length = (dx**2 + dy**2) ** 0.5
-            if length > 0:
-                factor = (length - 2 * shrink) / length
-                x_end_adj = x_start + dx * factor
-                y_end_adj = y_start + dy * factor
-            else:
-                x_end_adj, y_end_adj = x_end, y_end
+    # ---- 1. Draw continuous line connecting all cities ----
+    xs = [cities[i][0] for i in route_loop]
+    ys = [cities[i][1] for i in route_loop]
+    ax.plot(xs, ys, color=color, linewidth=2, alpha=0.9, zorder=zorder)
 
-            ax.annotate(
-                "",
-                xy=(x_end_adj, y_end_adj),
-                xytext=(x_start, y_start),
-                arrowprops=dict(
-                    arrowstyle="->",
-                    linewidth=2,
-                    color=color,
-                    alpha=0.9,
-                ),
-                zorder=zorder,
-            )
+    # ---- 2. Draw arrowheads on each segment ----
+    for i in range(len(route_loop) - 1):
+        start = route_loop[i]
+        end = route_loop[i + 1]
 
+        x_start, y_start = cities[start]
+        x_end, y_end = cities[end]
+
+        # Compute direction vector
+        dx = x_end - x_start
+        dy = y_end - y_start
+
+        # Arrowhead position (slightly before the endpoint)
+        arrow_frac = 0.85  # move arrowhead back along the line
+        x_arrow = x_start + dx * arrow_frac
+        y_arrow = y_start + dy * arrow_frac
+
+        ax.annotate(
+            "",
+            xy=(x_arrow, y_arrow),
+            xytext=(x_start, y_start),
+            arrowprops=dict(
+                arrowstyle="-|>",    # arrow head
+                color=color,
+                lw=2,
+                mutation_scale=10,   # arrowhead size
+            ),
+            zorder=zorder + 1,
+        )
     # Draw user route (blue arrows)
     if user_route:
         draw_route_arrows(user_route, color="tab:blue", zorder=2)
