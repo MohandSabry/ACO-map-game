@@ -157,8 +157,8 @@ def plot_routes(
         draw_route_with_arrows(ax, cities, aco_route, color="tab:orange")
 
     ax.set_title("TSP Cities and Routes")
-    ax.set_xlabel("X coordinate")
-    ax.set_ylabel("Y coordinate")
+    ax.set_xlabel("the way to North")
+    ax.set_ylabel("the way to South")
 
     # Custom legend
     legend_handles = []
