@@ -1,8 +1,8 @@
-import string
-from typing import List, Optional, Tuple
+import time
+from typing import List, Optional
 
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D  # NEW: for custom legend entries
+from matplotlib.lines import Line2D
 import numpy as np
 import streamlit as st
 
@@ -52,6 +52,81 @@ def regenerate_cities(num_cities: int, seed: int) -> None:
     st.session_state.aco_best_history = None
 
 
+# ---------- helpers for drawing routes ----------
+
+
+def closed_loop(route: List[int]) -> List[int]:
+    """Return the route closed by returning to the start city."""
+    if not route:
+        return route
+    if route[0] != route[-1]:
+        return route + [route[0]]
+    return route
+
+
+def draw_route_with_arrows(
+    ax: plt.Axes,
+    cities: np.ndarray,
+    route: List[int],
+    color: str,
+    max_segments: Optional[int] = None,
+    arrow_every: int = 1,
+) -> None:
+    """
+    Draw a connected polyline with arrowheads along the route.
+
+    Args:
+        ax: Matplotlib axes to draw on.
+        cities: Array of city coordinates.
+        route: List of city indices.
+        color: Color for line and arrows.
+        max_segments: If given, only draw the first `max_segments` segments
+                      (used for animation).
+        arrow_every: Draw an arrow on every Nth segment.
+    """
+    route_loop = closed_loop(route)
+    if len(route_loop) < 2:
+        return
+
+    num_segments = len(route_loop) - 1
+    if max_segments is None or max_segments > num_segments:
+        max_segments = num_segments
+
+    # Draw continuous line for the visible part of the route
+    line_indices = route_loop[: max_segments + 1]
+    xs = [cities[i, 0] for i in line_indices]
+    ys = [cities[i, 1] for i in line_indices]
+    ax.plot(xs, ys, color=color, linewidth=2, alpha=0.9, zorder=2)
+
+    # Draw arrowheads on segments
+    for seg_idx in range(0, max_segments, arrow_every):
+        start_idx = route_loop[seg_idx]
+        end_idx = route_loop[seg_idx + 1]
+        x_start, y_start = cities[start_idx]
+        x_end, y_end = cities[end_idx]
+
+        dx = x_end - x_start
+        dy = y_end - y_start
+
+        # place arrowhead a bit before the endpoint
+        arrow_frac = 0.85
+        x_arrow = x_start + dx * arrow_frac
+        y_arrow = y_start + dy * arrow_frac
+
+        ax.annotate(
+            "",
+            xy=(x_arrow, y_arrow),
+            xytext=(x_start, y_start),
+            arrowprops=dict(
+                arrowstyle="-|>",
+                color=color,
+                lw=2,
+                mutation_scale=12,
+            ),
+            zorder=3,
+        )
+
+
 def plot_routes(
     cities: np.ndarray,
     labels: List[str],
@@ -62,79 +137,31 @@ def plot_routes(
     Plot the cities and (optionally) the user and ACO routes.
 
     - Cities are shown as points with labels (A, B, C, ...).
-    - Routes are drawn as **arrows** to show direction of travel.
+    - Routes are drawn as continuous lines with arrowheads to show direction.
     """
-
     fig, ax = plt.subplots()
 
     x = cities[:, 0]
     y = cities[:, 1]
-    ax.scatter(x, y, zorder=3)
+    ax.scatter(x, y, zorder=4)
 
     # Label each city
     for i, label in enumerate(labels):
-        ax.text(x[i] + 0.01, y[i] + 0.01, label, fontsize=9, zorder=4)
+        ax.text(x[i] + 0.01, y[i] + 0.01, label, fontsize=9, zorder=5)
 
-    # Helper to close the loop (return to start)
-    def closed_loop(route: List[int]) -> List[int]:
-        if not route:
-            return route
-        if route[0] != route[-1]:
-            return route + [route[0]]
-        return route
-        
-def draw_route_arrows(route: List[int], color: str, zorder: int = 2) -> None:
-    """Draw a connected polyline with arrowheads showing direction."""
-
-    route_loop = closed_loop(route)
-
-    # ---- 1. Draw continuous line connecting all cities ----
-    xs = [cities[i][0] for i in route_loop]
-    ys = [cities[i][1] for i in route_loop]
-    ax.plot(xs, ys, color=color, linewidth=2, alpha=0.9, zorder=zorder)
-
-    # ---- 2. Draw arrowheads on each segment ----
-    for i in range(len(route_loop) - 1):
-        start = route_loop[i]
-        end = route_loop[i + 1]
-
-        x_start, y_start = cities[start]
-        x_end, y_end = cities[end]
-
-        # Compute direction vector
-        dx = x_end - x_start
-        dy = y_end - y_start
-
-        # Arrowhead position (slightly before the endpoint)
-        arrow_frac = 0.85  # move arrowhead back along the line
-        x_arrow = x_start + dx * arrow_frac
-        y_arrow = y_start + dy * arrow_frac
-
-        ax.annotate(
-            "",
-            xy=(x_arrow, y_arrow),
-            xytext=(x_start, y_start),
-            arrowprops=dict(
-                arrowstyle="-|>",    # arrow head
-                color=color,
-                lw=2,
-                mutation_scale=10,   # arrowhead size
-            ),
-            zorder=zorder + 1,
-        )
-    # Draw user route (blue arrows)
+    # Draw user route (blue)
     if user_route:
-        draw_route_arrows(user_route, color="tab:blue", zorder=2)
+        draw_route_with_arrows(ax, cities, user_route, color="tab:blue")
 
-    # Draw ACO best route (orange arrows)
+    # Draw ACO best route (orange)
     if aco_route:
-        draw_route_arrows(aco_route, color="tab:orange", zorder=1)
+        draw_route_with_arrows(ax, cities, aco_route, color="tab:orange")
 
     ax.set_title("TSP Cities and Routes")
     ax.set_xlabel("X coordinate")
     ax.set_ylabel("Y coordinate")
 
-    # Custom legend that matches arrow colors
+    # Custom legend
     legend_handles = []
     if user_route:
         legend_handles.append(
@@ -165,6 +192,56 @@ def draw_route_arrows(route: List[int], color: str, zorder: int = 2) -> None:
 
     fig.tight_layout()
     return fig
+
+
+def animate_route(
+    cities: np.ndarray,
+    labels: List[str],
+    route: List[int],
+    color: str,
+    title: str,
+    delay: float = 0.4,
+) -> None:
+    """
+    Animate a route being drawn step-by-step with arrowheads.
+
+    Uses a Streamlit placeholder to update the plot in a loop.
+    """
+    if not route:
+        return
+
+    route_loop = closed_loop(route)
+    num_segments = len(route_loop) - 1
+
+    placeholder = st.empty()
+
+    for k in range(1, num_segments + 1):
+        fig, ax = plt.subplots()
+
+        # Plot cities and labels
+        x = cities[:, 0]
+        y = cities[:, 1]
+        ax.scatter(x, y, zorder=4)
+        for i, label in enumerate(labels):
+            ax.text(x[i] + 0.01, y[i] + 0.01, label, fontsize=9, zorder=5)
+
+        # Draw only first k segments
+        draw_route_with_arrows(
+            ax,
+            cities,
+            route,
+            color=color,
+            max_segments=k,
+            arrow_every=1,
+        )
+
+        ax.set_xlabel("X coordinate")
+        ax.set_ylabel("Y coordinate")
+        ax.set_title(title)
+        fig.tight_layout()
+
+        placeholder.pyplot(fig)
+        time.sleep(delay)
 
 
 def plot_aco_progress(best_history: List[float]) -> plt.Figure:
@@ -198,13 +275,14 @@ Then we run the **Ant Colony Optimization (ACO)** algorithm on the same map and 
 2. In the text box, type the order in which you want to visit them, e.g.:
    - `A-B-C-D-E-F-G-H`
 3. Click **Submit My Route** to see:
-   - Your route drawn on the map (now with arrows showing direction).
+   - Your route drawn on the map, with arrowheads showing direction.
    - Your total route length.
 4. Choose ACO parameters in the sidebar (or use defaults).
 5. Click **Run Ant Colony** to see:
    - The best route the ants found.
    - A chart of the best distance over iterations.
    - A percentage comparison between your route and ACO’s best.
+6. Use the **animation buttons** to watch routes being drawn step-by-step.
         """
     )
 
@@ -342,6 +420,15 @@ def main() -> None:
             st.write(" → ".join(best_route_labels + [best_route_labels[0]]))
             st.write(f"Best route length: **{st.session_state.aco_best_distance:.3f}**")
 
+            if st.button("Animate ACO best route"):
+                animate_route(
+                    cities,
+                    labels,
+                    st.session_state.aco_best_route,
+                    color="tab:orange",
+                    title="ACO Best Route (animated)",
+                )
+
         if st.session_state.aco_best_history is not None:
             fig_progress = plot_aco_progress(st.session_state.aco_best_history)
             st.pyplot(fig_progress)
@@ -375,6 +462,17 @@ def main() -> None:
             st.info("Submit a route first to compare with the algorithm.")
         elif st.session_state.aco_best_distance is None:
             st.info("Run the Ant Colony algorithm to get a comparison.")
+
+        # Animation button for user's route
+        if st.session_state.user_route is not None:
+            if st.button("Animate your route"):
+                animate_route(
+                    cities,
+                    labels,
+                    st.session_state.user_route,
+                    color="tab:blue",
+                    title="Your Route (animated)",
+                )
 
     # Educational explanation at the bottom
     st.markdown(
