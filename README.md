@@ -40,7 +40,6 @@ Built-in descriptions clarify:
 
 2. Project Structure
 /project
-│
 ├── app.py              # Streamlit UI: visualization, route building, animations, ACO controls
 ├── aco.py              # Ant Colony Optimization algorithm implementation
 ├── tsp_instance.py     # Random city generation and labeling utilities
@@ -127,23 +126,10 @@ Install Dependencies:
 pip install -r requirements.txt
 Launch Streamlit:
 streamlit run app.py
-Navigate to the displayed URL (typically http://localhost:8501).
 
 ⸻
 
-5. Deployment (Streamlit Community Cloud)
-	1.	Push the repository to GitHub.
-	2.	Visit: https://share.streamlit.io
-	3.	Select New app.
-	4.	Choose your repository.
-	5.	Specify app.py as the entry point.
-	6.	Deploy the application.
-
-A free public URL will be generated.
-
-⸻
-
-6. Ant Colony Optimization: Algorithm Overview
+5. Ant Colony Optimization: Algorithm Overview
 
 Desirability Function
 
@@ -173,7 +159,7 @@ Shorter tours deposit stronger pheromone reinforcement.
 
 ⸻
 
-7. Future Extensions
+6. Future Extensions
 	•	Direct map clicking instead of button-based input
 	•	Visualization of pheromone intensities on edges
 	•	Real-time ant movement animations
